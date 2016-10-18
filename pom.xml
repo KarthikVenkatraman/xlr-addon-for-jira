@@ -4,7 +4,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>org.venkatk.jira.addons</groupId>
     <artifactId>xlr-addon-for-jira</artifactId>
-    <version>1.0.1</version>
+    <version>1.0.2</version>
     <organization>
         <name>Venkat Karthik</name>
         <url></url>
