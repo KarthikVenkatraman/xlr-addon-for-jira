@@ -1,6 +1,9 @@
 package com.xebialabs.jira.xlr.client;
 
 
+import java.io.PrintWriter;
+import java.io.StringWriter;
+import java.util.*;
 import java.io.IOException;
 import java.io.StringReader;
 import java.text.SimpleDateFormat;
@@ -28,6 +31,7 @@ import com.sun.jersey.api.json.JSONConfiguration;
 import com.xebialabs.jira.xlr.dto.CreateReleaseView;
 import com.xebialabs.jira.xlr.dto.Release;
 import com.xebialabs.jira.xlr.dto.TemplateVariable;
+import com.xebialabs.jira.xlr.client.XLReleaseClientException;
 import org.w3c.dom.Document;
 import org.xml.sax.InputSource;
 import org.xml.sax.SAXException;
@@ -47,24 +51,36 @@ public class XLReleaseClient {
 
     private String serverVersion;
 
-    public XLReleaseClient(String serverUrl, String username, String password) {
+    public XLReleaseClient(String serverUrl, String username, String password) throws ServerNotAvailableException{
         this.user=username;
         this.password=password;
         this.serverUrl=serverUrl;
         this.serverVersion=determineServerVersion();
     }
 
-    public String determineServerVersion() {
+    public String determineServerVersion() throws ServerNotAvailableException {
 
         String defaultVersion = "4.6";
         String foundVersion;
-        WebResource service = newWebResource().path("server").path("info");
+		ClientResponse response=null;
+		try{
+	        WebResource service = newWebResource().path("server").path("info");
 
-        ClientResponse response = service.accept(MediaType.APPLICATION_XML).get(ClientResponse.class);
-        if (response.getClientResponseStatus().getFamily() != SUCCESSFUL) {
-            String errorReason = response.getEntity(String.class);
-            return defaultVersion;
-        }
+	        response = service.accept(MediaType.APPLICATION_XML).get(ClientResponse.class);
+	        if (response.getClientResponseStatus().getFamily() != SUCCESSFUL) {
+	            String errorReason = response.getEntity(String.class);
+	            return defaultVersion;
+	        }
+		}
+        catch(Exception ex)
+		{
+            /*
+            * When the plugin is unable to connect to the XLRelease Server If an Exception is thrown
+            * then the Jira Post workflow function messes up with the Workflow and hence the Issue is created
+            * with missing workflow links. Hence here a custom Exception is thrown to write the information back to the Jira issue
+            */
+			throw new ServerNotAvailableException("Unable to reach the mentioned XLR Server. Please contact the administrator");
+		}
 
         String xml = response.getEntity(String.class);
         DocumentBuilderFactory builderFactory = DocumentBuilderFactory.newInstance();
@@ -176,7 +192,9 @@ public class XLReleaseClient {
 
     private WebResource newWebResource() {
         Client client = newRestClient();
-        WebResource service = client.resource(serverUrl);
+		client.setConnectTimeout(10000);
+		client.setReadTimeout(10000);
+		WebResource service = client.resource(serverUrl);
         return service;
     }
 
