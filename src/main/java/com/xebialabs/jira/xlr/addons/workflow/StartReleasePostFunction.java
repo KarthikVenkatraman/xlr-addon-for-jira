@@ -22,6 +22,7 @@ import com.opensymphony.module.propertyset.PropertySet;
 import com.opensymphony.workflow.WorkflowException;
 
 import com.xebialabs.jira.xlr.client.TemplateNotFoundException;
+import com.xebialabs.jira.xlr.client.ServerNotAvailableException;
 import com.xebialabs.jira.xlr.client.XLReleaseClient;
 import com.xebialabs.jira.xlr.client.XLReleaseClientException;
 import com.xebialabs.jira.xlr.dto.Release;
@@ -53,7 +54,9 @@ public class StartReleasePostFunction extends AbstractJiraFunctionProvider
             doExecute(args, issue);
         } catch (IllegalArgumentException e) {
             writeErrorAsComment(issue, "Start Release In XLR Post Function configuration error:\n" + e.getMessage());
-        } catch (TemplateNotFoundException e) {
+        } catch(ServerNotAvailableException sne) {
+			writeErrorAsComment(issue, sne.getMessage());
+		} catch (TemplateNotFoundException e) {
             writeErrorAsComment(issue, e.getMessage());
         } catch (XLReleaseClientException e) {
             StringWriter sw = new StringWriter();
@@ -77,26 +80,35 @@ public class StartReleasePostFunction extends AbstractJiraFunctionProvider
 
     private void doExecute(Map args, MutableIssue issue) throws XLReleaseClientException {
         IssueFieldMapper argsMapper = new IssueFieldMapper(args, issue);
-        XLReleaseClient xlReleaseClient = initClient(argsMapper);
-        String serverVersion = xlReleaseClient.getServerVersion();
 
-        String releaseId = argsMapper.getReleaseId();
-        if (releaseId != null) {
-            writeComment(issue, "Release already created with id " + releaseId + ". Will ignore transition.");
-            return;
-        }
-
-        String xlrTemplate = argsMapper.getReleaseTemplateName();
-        
-        
+		String xlrTemplate = argsMapper.getReleaseTemplateName();
         if (xlrTemplate == null || "".equals(xlrTemplate) )
         {
             /*
             ** Code simply returns If it is unable to find a matching template name defined in XLRelease.
             ** This is done to byepass the mandatory check for Template name
-            ** If a template name is not passed in Jira, Then XLRelease will not write back an error as 
-            ** comment to the Jira issue
+            ** If a template name is not passed in Jira, then no further action is performed and the plugin should return
             */
+            return;
+        }
+
+        XLReleaseClient xlReleaseClient = initClient(argsMapper);
+        String serverVersion = xlReleaseClient.getServerVersion();
+
+		/*
+		* If Jira is unable to connect with XLRelease server and return 
+		* a server version, then instead of letting the plugin throw an Exception
+		* the control is returned back to Jira workflow post function  
+		* which otherwise would cause an issue If an Exception is thrown
+		*/
+		if ("" == serverVersion || serverVersion == null)
+		{
+			return;
+		}
+
+        String releaseId = argsMapper.getReleaseId();
+        if (releaseId != null) {
+            writeComment(issue, "Release already created with id " + releaseId + ". Will ignore transition.");
             return;
         }
 
@@ -126,7 +138,7 @@ public class StartReleasePostFunction extends AbstractJiraFunctionProvider
 
     }
 
-    private XLReleaseClient initClient(IssueFieldMapper argsMapper) {
+    private XLReleaseClient initClient(IssueFieldMapper argsMapper) throws ServerNotAvailableException {
         return new XLReleaseClient(argsMapper.getUrl(), argsMapper.getUsername(), argsMapper.getPassword());
     }
 
